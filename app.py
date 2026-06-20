@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import sqlite3
+from datetime import date, time
 
 st.set_page_config(
     page_title="ClinicFlow",
@@ -7,45 +9,102 @@ st.set_page_config(
     layout="wide"
 )
 
-if "patients" not in st.session_state:
-    st.session_state.patients = []
+# ---------------- DATABASE ----------------
 
-if "appointments" not in st.session_state:
-    st.session_state.appointments = []
+conn = sqlite3.connect("clinicflow.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS patients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    age INTEGER NOT NULL,
+    phone TEXT NOT NULL
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS appointments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    patient_name TEXT NOT NULL,
+    appointment_date TEXT NOT NULL,
+    appointment_time TEXT NOT NULL
+)
+""")
+
+conn.commit()
+
+
+# ---------------- FUNCTIONS ----------------
+
+def get_patients():
+    return pd.read_sql_query(
+        "SELECT * FROM patients",
+        conn
+    )
+
+
+def get_appointments():
+    return pd.read_sql_query(
+        "SELECT * FROM appointments",
+        conn
+    )
+
+
+# ---------------- SIDEBAR ----------------
 
 menu = st.sidebar.selectbox(
     "Navigation",
     ["Dashboard", "Patients", "Appointments"]
 )
 
+
+# ---------------- DASHBOARD ----------------
+
 if menu == "Dashboard":
+
     st.title("🏥 ClinicFlow Dashboard")
+
+    patients_df = get_patients()
+    appointments_df = get_appointments()
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("👥 Total Patients", len(st.session_state.patients))
+        st.metric("👥 Total Patients", len(patients_df))
 
     with col2:
-        st.metric("📅 Total Appointments", len(st.session_state.appointments))
+        st.metric("📅 Total Appointments", len(appointments_df))
 
     with col3:
         st.metric("👨‍⚕️ Doctors", 1)
 
     st.divider()
+
     st.subheader("Recent Patients")
 
-    if st.session_state.patients:
-        st.dataframe(pd.DataFrame(st.session_state.patients), use_container_width=True)
+    if len(patients_df) > 0:
+        st.dataframe(
+            patients_df,
+            use_container_width=True
+        )
     else:
         st.info("No patients available yet.")
 
+
+# ---------------- PATIENTS ----------------
+
 elif menu == "Patients":
+
     st.title("👨‍⚕️ Patient Management")
 
     with st.form("patient_form", clear_on_submit=True):
         name = st.text_input("Patient Name")
-        age = st.number_input("Patient Age", min_value=0, max_value=120)
+        age = st.number_input(
+            "Patient Age",
+            min_value=0,
+            max_value=120
+        )
         phone = st.text_input("Phone Number")
 
         submitted = st.form_submit_button("Add Patient")
@@ -54,69 +113,116 @@ elif menu == "Patients":
             if name.strip() == "" or phone.strip() == "":
                 st.error("Please enter patient name and phone number.")
             else:
-                patient_id = len(st.session_state.patients) + 1
+                cursor.execute(
+                    """
+                    INSERT INTO patients (name, age, phone)
+                    VALUES (?, ?, ?)
+                    """,
+                    (name, age, phone)
+                )
 
-                st.session_state.patients.append({
-                    "ID": patient_id,
-                    "Name": name,
-                    "Age": age,
-                    "Phone": phone
-                })
+                conn.commit()
 
                 st.success("Patient Added Successfully!")
+                st.rerun()
 
     st.divider()
+
     st.subheader("Patient Records")
 
-    if st.session_state.patients:
-        st.dataframe(pd.DataFrame(st.session_state.patients), use_container_width=True)
+    patients_df = get_patients()
 
-        patient_ids = [patient["ID"] for patient in st.session_state.patients]
-        delete_id = st.selectbox("Select Patient ID to delete", patient_ids)
+    if len(patients_df) > 0:
+        st.dataframe(
+            patients_df,
+            use_container_width=True
+        )
+
+        patient_ids = patients_df["id"].tolist()
+
+        delete_id = st.selectbox(
+            "Select Patient ID to delete",
+            patient_ids
+        )
 
         if st.button("Delete Selected Patient"):
-            st.session_state.patients = [
-                patient for patient in st.session_state.patients
-                if patient["ID"] != delete_id
-            ]
+            cursor.execute(
+                "DELETE FROM patients WHERE id = ?",
+                (delete_id,)
+            )
+
+            conn.commit()
+
             st.success("Patient Deleted!")
             st.rerun()
+
     else:
         st.info("No patients added yet.")
 
+
+# ---------------- APPOINTMENTS ----------------
+
 elif menu == "Appointments":
+
     st.title("📅 Appointment Booking")
 
-    if not st.session_state.patients:
+    patients_df = get_patients()
+
+    if len(patients_df) == 0:
         st.warning("Add a patient first before booking an appointment.")
+
     else:
-        patient_names = [patient["Name"] for patient in st.session_state.patients]
+        patient_names = patients_df["name"].tolist()
 
         with st.form("appointment_form", clear_on_submit=True):
-            patient_name = st.selectbox("Select Patient", patient_names)
-            appointment_date = st.date_input("Appointment Date")
-            appointment_time = st.time_input("Appointment Time")
+            patient_name = st.selectbox(
+                "Select Patient",
+                patient_names
+            )
+
+            appointment_date = st.date_input(
+                "Appointment Date",
+                value=date.today()
+            )
+
+            appointment_time = st.time_input(
+                "Appointment Time",
+                value=time(10, 0)
+            )
 
             booked = st.form_submit_button("Book Appointment")
 
             if booked:
-                appointment_id = len(st.session_state.appointments) + 1
+                cursor.execute(
+                    """
+                    INSERT INTO appointments
+                    (patient_name, appointment_date, appointment_time)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        patient_name,
+                        str(appointment_date),
+                        str(appointment_time)
+                    )
+                )
 
-                st.session_state.appointments.append({
-                    "ID": appointment_id,
-                    "Patient": patient_name,
-                    "Date": str(appointment_date),
-                    "Time": str(appointment_time)
-                })
+                conn.commit()
 
-                st.success(f"Appointment booked for {patient_name}!")
+                st.success(
+                    f"Appointment booked for {patient_name}!"
+                )
+
+                st.rerun()
 
     st.divider()
+
     st.subheader("Appointment Records")
 
-    if st.session_state.appointments:
+    appointments_df = get_appointments()
+
+    if len(appointments_df) > 0:
         st.dataframe(
-            pd.DataFrame(st.session_state.appointments),
+            appointments_df,
             use_container_width=True
         )
     else:
