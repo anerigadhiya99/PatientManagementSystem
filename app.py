@@ -38,17 +38,11 @@ conn.commit()
 # ---------------- FUNCTIONS ----------------
 
 def get_patients():
-    return pd.read_sql_query(
-        "SELECT * FROM patients",
-        conn
-    )
+    return pd.read_sql_query("SELECT * FROM patients", conn)
 
 
 def get_appointments():
-    return pd.read_sql_query(
-        "SELECT * FROM appointments",
-        conn
-    )
+    return pd.read_sql_query("SELECT * FROM appointments", conn)
 
 
 # ---------------- SIDEBAR ----------------
@@ -80,14 +74,10 @@ if menu == "Dashboard":
         st.metric("👨‍⚕️ Doctors", 1)
 
     st.divider()
-
     st.subheader("Recent Patients")
 
     if len(patients_df) > 0:
-        st.dataframe(
-            patients_df,
-            use_container_width=True
-        )
+        st.dataframe(patients_df, use_container_width=True)
     else:
         st.info("No patients available yet.")
 
@@ -100,11 +90,7 @@ elif menu == "Patients":
 
     with st.form("patient_form", clear_on_submit=True):
         name = st.text_input("Patient Name")
-        age = st.number_input(
-            "Patient Age",
-            min_value=0,
-            max_value=120
-        )
+        age = st.number_input("Patient Age", min_value=0, max_value=120)
         phone = st.text_input("Phone Number")
 
         submitted = st.form_submit_button("Add Patient")
@@ -114,29 +100,41 @@ elif menu == "Patients":
                 st.error("Please enter patient name and phone number.")
             else:
                 cursor.execute(
-                    """
-                    INSERT INTO patients (name, age, phone)
-                    VALUES (?, ?, ?)
-                    """,
+                    "INSERT INTO patients (name, age, phone) VALUES (?, ?, ?)",
                     (name, age, phone)
                 )
-
                 conn.commit()
-
                 st.success("Patient Added Successfully!")
                 st.rerun()
 
     st.divider()
 
-    st.subheader("Patient Records")
+    st.subheader("Search Patient")
+
+    search_name = st.text_input("Search by patient name")
 
     patients_df = get_patients()
 
+    if search_name.strip() != "":
+        search_result = patients_df[
+            patients_df["name"].str.contains(
+                search_name,
+                case=False,
+                na=False
+            )
+        ]
+
+        if len(search_result) > 0:
+            st.dataframe(search_result, use_container_width=True)
+        else:
+            st.warning("No patient found with that name.")
+
+    st.divider()
+
+    st.subheader("Patient Records")
+
     if len(patients_df) > 0:
-        st.dataframe(
-            patients_df,
-            use_container_width=True
-        )
+        st.dataframe(patients_df, use_container_width=True)
 
         patient_ids = patients_df["id"].tolist()
 
@@ -150,9 +148,7 @@ elif menu == "Patients":
                 "DELETE FROM patients WHERE id = ?",
                 (delete_id,)
             )
-
             conn.commit()
-
             st.success("Patient Deleted!")
             st.rerun()
 
@@ -175,10 +171,7 @@ elif menu == "Appointments":
         patient_names = patients_df["name"].tolist()
 
         with st.form("appointment_form", clear_on_submit=True):
-            patient_name = st.selectbox(
-                "Select Patient",
-                patient_names
-            )
+            patient_name = st.selectbox("Select Patient", patient_names)
 
             appointment_date = st.date_input(
                 "Appointment Date",
@@ -207,23 +200,15 @@ elif menu == "Appointments":
                 )
 
                 conn.commit()
-
-                st.success(
-                    f"Appointment booked for {patient_name}!"
-                )
-
+                st.success(f"Appointment booked for {patient_name}!")
                 st.rerun()
 
     st.divider()
-
     st.subheader("Appointment Records")
 
     appointments_df = get_appointments()
 
     if len(appointments_df) > 0:
-        st.dataframe(
-            appointments_df,
-            use_container_width=True
-        )
+        st.dataframe(appointments_df, use_container_width=True)
     else:
         st.info("No appointments booked yet.")
